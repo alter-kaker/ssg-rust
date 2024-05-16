@@ -61,6 +61,10 @@ impl<T> NodeRef<T> {
     fn set_head(&mut self, value: NodeRef<T>) -> Result<(), GeneratorError> {
         self.0.as_ref().head.set(value)
     }
+
+    fn into_iter(self) -> NodeIterator<T> {
+      NodeIterator { next_node: Some(self) }
+    }
 }
 
 impl<T> Clone for NodeRef<T> {
@@ -87,24 +91,21 @@ impl<T> Iterator for NodeIterator<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct Cascade<T>(Vec<Node<T>>);
-
-impl<T> Cascade<T> {
-    fn push(&mut self, value: Node<T>) {
-        self.0.push(value)
-    }
-
-    fn pop(&mut self) -> Option<Node<T>> {
-        self.0.pop()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::error::Error;
 
     use super::*;
+    fn build(
+    ) -> Result<(NodeRef<String>, NodeRef<String>, NodeRef<String>, NodeRef<String>), GeneratorError>
+    {
+        let avi = NodeRef::new("Avrohom".to_string());
+        let yitz = avi.clone().push(NodeRef::new("Yitzhok".to_string()))?;
+        let yank = yitz.clone().push(NodeRef::new("Yaakov".to_string()))?;
+        let esau = yitz.clone().push(NodeRef::new("Esau".to_string()))?;
+
+        Ok((avi, yitz, yank, esau))
+    }
 
     #[test]
     fn create_branch() {
@@ -121,22 +122,29 @@ mod tests {
 
     #[test]
     fn branching_branch() {
-        fn build(
-        ) -> Result<(NodeRef<String>, NodeRef<String>, NodeRef<String>, NodeRef<String>), GeneratorError>
-        {
-            let avi = NodeRef::new("Avrohom".to_string());
-            let yitz = avi.clone().push(NodeRef::new("Yitzhok".to_string()))?;
-            let yank = yitz.clone().push(NodeRef::new("Yaakov".to_string()))?;
-            let esau = yitz.clone().push(NodeRef::new("Esau".to_string()))?;
-
-            Ok((avi, yitz, yank, esau))
-        }
+        
         match build() {
             Ok((avi, yitz, yank, esau)) => {
                 assert!(avi.get_head().is_none());
                 assert_eq!("Avrohom".to_string(), *yitz.get_head().as_ref().unwrap().0.data);
                 assert_eq!("Yitzhok".to_string(), *yank.get_head().as_ref().unwrap().0.data);
                 assert_eq!("Yitzhok".to_string(), *esau.get_head().as_ref().unwrap().0.data);
+            }
+            Err(err) => {
+                assert!(false, "Error: {:?}", err)
+            }
+        }
+    }
+
+
+
+    #[test]
+    fn iteration() {
+        
+        match build() {
+            Ok((avi, yitz, yank, esau)) => {
+                let names: Vec<String> = esau.into_iter().map(|n| n.0.as_ref().data.as_ref().clone() ).collect();
+                dbg!(names);
             }
             Err(err) => {
                 assert!(false, "Error: {:?}", err)
