@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use std::fmt::Display;
+use std::sync::{MutexGuard, TryLockError};
 
 #[derive(Debug)]
 pub enum GeneratorError {
@@ -8,6 +9,7 @@ pub enum GeneratorError {
     DataObjectNotInitialized,
     DataObjectAlreadyInitialized,
     HeadAlreadySet,
+    ConcurrencyError,
     LibraryError(LibraryErrorKind, Box<dyn Error>),
 }
 
@@ -60,5 +62,11 @@ impl From<ureq::Error> for GeneratorError {
 impl From<std::io::Error> for GeneratorError {
     fn from(value: std::io::Error) -> Self {
         GeneratorError::LibraryError(LibraryErrorKind::TemplateError, Box::new(value))
+    }
+}
+
+impl<T> From<TryLockError<MutexGuard<'_, T>>> for GeneratorError {
+    fn from(_value: TryLockError<MutexGuard<'_, T>>) -> Self {
+      GeneratorError::ConcurrencyError
     }
 }

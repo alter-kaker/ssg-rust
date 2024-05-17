@@ -7,13 +7,13 @@ struct NodeHead<T>(Mutex<Option<NodeRef<T>>>);
 
 impl<T: Clone> Clone for NodeHead<T> {
     fn clone(&self) -> Self {
-        Self(Mutex::new(self.0.try_lock().unwrap().clone()))
+        Self(Mutex::new(self.0.lock().unwrap().clone())) // todo: don't unwrap
     }
 }
 
 impl<T> NodeHead<T> {
     fn set(&self, value: NodeRef<T>) -> Result<(), GeneratorError> {
-        let mut mutex = self.0.try_lock().unwrap();
+        let mut mutex = self.0.try_lock()?; // todo: don't unwrap
         match *mutex {
             Some(_) => Err(GeneratorError::HeadAlreadySet),
             None => {
@@ -23,8 +23,12 @@ impl<T> NodeHead<T> {
         }
     }
 
-    fn new() -> NodeHead<T> {
+    fn empty() -> Self {
         Self(Mutex::new(None))
+    }
+
+    fn new(head: NodeRef<T>) -> Self {
+        Self(Mutex::new(Some(head)))
     }
 
     fn get(&self) -> Option<NodeRef<T>> {
@@ -34,7 +38,7 @@ impl<T> NodeHead<T> {
 
 #[derive(Debug, Clone)]
 struct Node<T> {
-    data: Arc<T>,
+    value: Arc<T>,
     head: NodeHead<T>,
 }
 
@@ -42,28 +46,36 @@ struct Node<T> {
 pub struct NodeRef<T>(Arc<Node<T>>);
 
 impl<T> NodeRef<T> {
-    pub fn new(data: T) -> NodeRef<T> {
-        NodeRef(Arc::new(Node {
-            data: Arc::new(data),
-            head: NodeHead::new(),
+    pub fn new(value: T) -> Self {
+        Self(Arc::new(Node {
+            value: Arc::new(value),
+            head: NodeHead::empty(),
         }))
     }
 
-    pub fn push(self, mut value: NodeRef<T>) -> Result<NodeRef<T>, GeneratorError> {
-        value.set_head(self)?;
-        Ok(value.clone())
+    pub fn push(self, value: T) -> Result<Self, GeneratorError> {
+        Ok(Self(Arc::new(Node {
+            value: Arc::new(value),
+            head: NodeHead::new(self),
+        })))
     }
 
-    pub fn get_head(&self) -> Option<Self> {
+    pub fn branch(&self, value: T) -> Result<Self, GeneratorError> {
+        self.clone().push(value)
+    }
+
+    pub fn into_iter(self) -> NodeIterator<T> {
+        NodeIterator {
+            next_node: Some(self),
+        }
+    }
+
+    pub fn data(self) -> Arc<T> {
+        self.0.value.clone()
+    }
+
+    fn get_head(&self) -> Option<Self> {
         self.0.head.get()
-    }
-
-    fn set_head(&mut self, value: NodeRef<T>) -> Result<(), GeneratorError> {
-        self.0.as_ref().head.set(value)
-    }
-
-    fn into_iter(self) -> NodeIterator<T> {
-      NodeIterator { next_node: Some(self) }
     }
 }
 
@@ -73,7 +85,7 @@ impl<T> Clone for NodeRef<T> {
     }
 }
 
-struct NodeIterator<T> {
+pub struct NodeIterator<T> {
     next_node: Option<NodeRef<T>>,
 }
 
@@ -93,62 +105,73 @@ impl<T> Iterator for NodeIterator<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
 
     use super::*;
-    fn build(
-    ) -> Result<(NodeRef<String>, NodeRef<String>, NodeRef<String>, NodeRef<String>), GeneratorError>
-    {
-        let avi = NodeRef::new("Avrohom".to_string());
-        let yitz = avi.clone().push(NodeRef::new("Yitzhok".to_string()))?;
-        let yank = yitz.clone().push(NodeRef::new("Yaakov".to_string()))?;
-        let esau = yitz.clone().push(NodeRef::new("Esau".to_string()))?;
-
-        Ok((avi, yitz, yank, esau))
-    }
 
     #[test]
     fn create_branch() {
         let branch = NodeRef::new("Avrohom".to_string())
-            .push(NodeRef::new("Yitzhok".to_string()))
+            .push("Yitzhok".to_string())
             .unwrap()
-            .push(NodeRef::new("Yaakov".to_string()))
+            .push("Yaakov".to_string())
             .unwrap();
 
-        assert_eq!("Yaakov".to_string(), *branch.0.data);
-        assert_eq!("Yitzhok".to_string(), *branch.get_head().as_ref().unwrap().0.data);
-        assert_eq!("Avrohom".to_string(), *branch.get_head().as_ref().unwrap().get_head().as_ref().unwrap().0.data);
+        assert_eq!("Yaakov".to_string(), branch.clone().data().as_ref().clone());
+        assert_eq!(
+            "Yitzhok".to_string(),
+            *branch.get_head().unwrap().clone().data()
+        );
+        assert_eq!(
+            "Avrohom".to_string(),
+            *branch.get_head().unwrap().get_head().unwrap().data()
+        );
+    }
+
+    #[test]
+    fn iteration() {
+        let result: Result<Vec<Arc<String>>, GeneratorError> = (|| {
+            Ok(NodeRef::new("Avrohom".to_string())
+                .push("Yitzhok".to_string())?
+                .push("Yakov".to_string())?
+                .into_iter()
+                .map(NodeRef::data)
+                .collect())
+        })();
+
+        match result {
+            Ok(names) => {
+                dbg!(names);
+            }
+            Err(err) => assert!(false, "{:?}", err),
+        }
     }
 
     #[test]
     fn branching_branch() {
-        
-        match build() {
-            Ok((avi, yitz, yank, esau)) => {
-                assert!(avi.get_head().is_none());
-                assert_eq!("Avrohom".to_string(), *yitz.get_head().as_ref().unwrap().0.data);
-                assert_eq!("Yitzhok".to_string(), *yank.get_head().as_ref().unwrap().0.data);
-                assert_eq!("Yitzhok".to_string(), *esau.get_head().as_ref().unwrap().0.data);
-            }
-            Err(err) => {
-                assert!(false, "Error: {:?}", err)
-            }
-        }
-    }
+        let yitzhok = NodeRef::new("Avrohom".to_string())
+            .push("Yitzhok".to_string())
+            .unwrap();
 
+        let result: Result<(Vec<Arc<String>>, Vec<Arc<String>>), GeneratorError> = (|| {
+            Ok((
+                yitzhok
+                    .branch("Eisov".to_string())?
+                    .into_iter()
+                    .map(NodeRef::data)
+                    .collect(),
+                yitzhok
+                    .branch("Yakov".to_string())?
+                    .into_iter()
+                    .map(NodeRef::data)
+                    .collect(),
+            ))
+        })();
 
-
-    #[test]
-    fn iteration() {
-        
-        match build() {
-            Ok((avi, yitz, yank, esau)) => {
-                let names: Vec<String> = esau.into_iter().map(|n| n.0.as_ref().data.as_ref().clone() ).collect();
-                dbg!(names);
+        match result {
+            Ok((eisov, yakov)) => {
+                println!("Eisov: {:?}\nYitzhok: {:?}", eisov, yakov);
             }
-            Err(err) => {
-                assert!(false, "Error: {:?}", err)
-            }
+            Err(err) => assert!(false, "{:?}", err),
         }
     }
 }
