@@ -3,8 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::error::GeneratorError;
-
 #[derive(Debug)]
 pub struct Cascade<T>(VecDeque<Arc<T>>);
 
@@ -13,12 +11,16 @@ impl<T> Cascade<T> {
         Self(VecDeque::new())
     }
 
-    pub fn push(&mut self, value: T) {
-        self.0.push_back(Arc::new(value))
+    pub fn push(mut self, value: T) -> Self {
+        self.0.push_back(Arc::new(value));
+        self
     }
 
-    pub fn branch(&self) -> Self {
-        Self(self.0.clone())
+    pub fn branch(&self, values: Vec<T>) -> Vec<Self> {
+        values
+            .into_iter()
+            .map(|value| Self(self.0.clone()).push(value))
+            .collect()
     }
 }
 
@@ -39,40 +41,29 @@ mod tests {
 
     #[test]
     fn iteration() {
-        let mut cascade = Cascade::new();
-        vec![
+        let mut result = vec![
             "Avrohom".to_string(),
             "Yitzhok".to_string(),
             "Yaakov".to_string(),
         ]
         .into_iter()
-        .for_each(|value| cascade.push(value));
-
-        let mut result = cascade
-            .into_iter()
-            .map(|value| value.as_ref().clone())
-            .collect::<Vec<String>>();
+        .fold(Cascade::new(), Cascade::push)
+        .into_iter()
+        .map(|value| value.as_ref().clone())
+        .collect::<Vec<String>>();
 
         assert_eq!("Yaakov".to_string(), result.pop().unwrap());
-        assert_eq!("Avrohom".to_string(), result.pop().unwrap());
         assert_eq!("Yitzhok".to_string(), result.pop().unwrap());
+        assert_eq!("Avrohom".to_string(), result.pop().unwrap());
     }
 
     #[test]
     fn cascade_with_branches() {
-        let mut cascade = Cascade::new();
-
-        vec!["Avrohom".to_string(), "Yitzhok".to_string()]
+        let mut result = vec!["Avrohom".to_string(), "Yitzhok".to_string()]
             .into_iter()
-            .for_each(|value| cascade.push(value));
-
-        let mut result = vec!["Eisov".to_string(), "Yakov".to_string()]
+            .fold(Cascade::new(), |cascade, value| cascade.push(value))
+            .branch(vec!["Eisov".to_string(), "Yakov".to_string()])
             .into_iter()
-            .map(|value| {
-                let mut branch = cascade.branch();
-                branch.push(value);
-                branch
-            })
             .map(|branch| {
                 branch.into_iter().fold(String::new(), |acc, value| {
                     if acc.is_empty() {

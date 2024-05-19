@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 minijinja = {version = "2.0.1", features = ["loader"]}
+serde = { version = "1.0.202", features = ["derive"] }
 ureq = {version = "2.9.7", features = ["json"]}

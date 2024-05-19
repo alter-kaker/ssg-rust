@@ -5,10 +5,6 @@ use std::sync::{MutexGuard, TryLockError};
 
 #[derive(Debug)]
 pub enum GeneratorError {
-    CollectionAlreadyRegistered(String),
-    DataObjectNotInitialized,
-    DataObjectAlreadyInitialized,
-    HeadAlreadySet,
     ConcurrencyError,
     LibraryError(LibraryErrorKind, Box<dyn Error>),
 }
@@ -23,9 +19,6 @@ pub enum LibraryErrorKind {
 impl Display for GeneratorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GeneratorError::CollectionAlreadyRegistered(key) => {
-                write!(f, "{:?}:, Collection {} Already Registered", self, key)
-            }
             GeneratorError::LibraryError(kind, source) => {
                 write!(f, "{:?}: {:?}: {}", self, kind, source)
             }

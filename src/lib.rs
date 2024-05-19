@@ -1,5 +1,7 @@
 mod cascade;
 mod error;
+mod collection;
+mod datasource;
 
 #[cfg(test)]
 mod tests {
