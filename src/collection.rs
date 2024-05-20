@@ -1,20 +1,30 @@
 use ureq::serde::Deserialize;
-use ureq::serde_json::Value;
+use ureq::serde_json::{Map, Value};
 
 use crate::cascade::Cascade;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Collection {
     data: Value,
     pages: Vec<Value>,
 }
 
-impl From<Collection> for Vec<Cascade<Value>> {
-    fn from(value: Collection) -> Self {
+impl Collection {
+    pub fn cascade(self) -> Vec<Value> {
         Cascade::new()
-            .push(value.data)
-            .branch(value.pages)
+            .push(self.data)
+            .branch(self.pages)
             .into_iter()
+            .map(|cascade| {
+                cascade
+                    .into_iter()
+                    .fold(Value::Object(Map::new()), |mut acc, value| {
+                        acc.as_object_mut()
+                            .unwrap()
+                            .append(&mut value.as_ref().clone().as_object_mut().unwrap());
+                        acc
+                    })
+            })
             .collect()
     }
 }
@@ -22,9 +32,7 @@ impl From<Collection> for Vec<Cascade<Value>> {
 #[cfg(test)]
 mod tests {
 
-    use ureq::serde_json::{self, Map};
-
-    use crate::cascade::Cascade;
+    use ureq::serde_json;
 
     use super::*;
 
@@ -48,19 +56,7 @@ mod tests {
             ],
         };
 
-        let mut result: Vec<Value> = Into::<Vec<Cascade<Value>>>::into(collection)
-            .into_iter()
-            .map(|cascade| {
-                cascade
-                    .into_iter()
-                    .fold(Value::Object(Map::new()), |mut acc, value| {
-                        acc.as_object_mut()
-                            .unwrap()
-                            .append(&mut value.as_ref().clone().as_object_mut().unwrap());
-                        acc
-                    })
-            })
-            .collect();
+        let mut result = collection.cascade();
 
         assert_eq!(
             serde_json::from_str::<Value>("{\"category\": \"brothers\", \"name\": \"Reuven\"}")
@@ -121,7 +117,29 @@ mod tests {
                 .ok(),
             result.pop()
         );
+    }
 
-        dbg!(result);
+    #[test]
+    fn specificity_override() {
+        let collection = Collection {
+            data: serde_json::from_str::<Value>("{\"category\": \"brothers\", \"garment\": \"plain\"}").unwrap(),
+            pages: vec![
+                serde_json::from_str::<Value>("{\"name\": \"Binyomin\"}").unwrap(),
+                serde_json::from_str::<Value>("{\"name\": \"Yosef\", \"garment\": \"colorful\"}").unwrap(),
+            ],
+        };
+
+        let mut result = collection.cascade();
+
+        assert_eq!(
+            serde_json::from_str::<Value>("{\"category\": \"brothers\", \"name\": \"Yosef\", \"garment\": \"colorful\"}")
+                .ok(),
+            result.pop()
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>("{\"category\": \"brothers\", \"name\": \"Binyomin\", \"garment\": \"plain\"}")
+                .ok(),
+            result.pop()
+        );
     }
 }
